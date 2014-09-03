@@ -1,4 +1,4 @@
-;;; pinboard-list.el --- work with Pinboard.in bookmarks from Emacs -*- lexical-binding: t -*-
+;;; pinboard-list.el --- Emacs client for Pinboard.in -*- lexical-binding: t -*-
 
 ;; Copyright (C) 2014 Jon Oddie <jonxfield@gmail.com>
 

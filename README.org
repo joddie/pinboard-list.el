@@ -1,0 +1,38 @@
+
+* pinboard-list.el
+  
+  An Emacs Pinboard.in client in the style of Dired or the built-in
+  =list-bookmarks=, with marking, filtering, and bulk
+  tag/rename/delete operations as well as editing of bookmark titles,
+  tags and annotations.  Bulk operations are queued and executed
+  asynchronously to respect Pinboard's API rate limiting.
+  
+  Caveat: Will attempt to load your entire bookmark collection into
+  Emacs's memory.  Works OK with 3,000 bookmarks, may not do so well
+  with 10,000.
+
+  Use =pinboard-login= to log in with username and password, or
+  customize =pinboard-api-token=.
+  
+  Use =pinboard-list-bookmarks= to list all bookmarks,
+  =pinboard-list-tags= to list all tags with bookmark counts.  Use
+  =describe-mode= for a list of keybindings.  Most commands from
+  =dired= or =list-bookmarks= have equivalents: viewing, renaming,
+  annotating, marking, deleting.  There are also commands to filter by
+  tag (=pinboard-add-tag-filter=), by unread status
+  (=pinboard-filter-unread=) or untagged (=pinboard-filter-untagged=).
+  =revert-buffer= (normally bound to "g") will fetch any updates from
+  the server.
+  
+** Suggested keybinding:
+   
+   : (global-set-key (kbd "C-x r p") 'pinboard-global-map)
+   
+   This will bind "C-x r p l" to =pinboard-list-bookmarks= and "C-x r
+   p t" to =pinboard-list-tags=.
+   
+** Todo-list:
+   - Do something more intelligent with large bookmark collections.
+   - Filter refreshed bookmarks correctly.
+   - Rename (merge) multiple tags in one operation.
+   - Clean up and unify buffer filtering functions.
