@@ -65,6 +65,7 @@
 (require 'subr-x nil t)
 (require 'queue)
 (require 'parse-time)
+(require 'json)
 
 (defvar pinboard-api-endpoint "https://api.pinboard.in/v1/"
   "Base URL for the Pinboard API, ending in a slash.")
@@ -109,57 +110,66 @@ Removes all Pinboard bookmarks and tags from memory and removes
 
 
 ;;;; Useful functions from subr-x for older emacs
-(unless (fboundp 'hash-table-keys)
-  (defsubst hash-table-keys (hash-table)
-    "Return a list of keys in HASH-TABLE."
-    (let ((keys '()))
-      (maphash (lambda (k _v) (push k keys)) hash-table)
-      keys)))
+(eval-and-compile
+  (if (fboundp 'hash-table-keys)
+      (defalias 'pinboard-hash-table-keys 'hash-table-keys)
+    (defun pinboard-hash-table-keys (hash-table)
+      "Return a list of keys in HASH-TABLE."
+      (let ((keys '()))
+	(maphash (lambda (k _v) (push k keys)) hash-table)
+	keys)))
 
-(unless (fboundp 'hash-table-values)
-  (defsubst hash-table-values (hash-table)
-    "Return a list of values in HASH-TABLE."
-    (let ((values '()))
-      (maphash (lambda (_k v) (push v values)) hash-table)
-      values)))
+  (if (fboundp 'hash-table-values)
+      (defalias 'pinboard-hash-table-values 'hash-table-values)
+    (defun pinboard-hash-table-values (hash-table)
+      "Return a list of values in HASH-TABLE."
+      (let ((values '()))
+	(maphash (lambda (_k v) (push v values)) hash-table)
+	values)))
 
-(unless (fboundp 'string-trim)
-  (defsubst string-trim-left (string)
-    "Remove leading whitespace from STRING."
-    (if (string-match "\\`[ \t\n\r]+" string)
-        (replace-match "" t t string)
-      string))
+  (if (fboundp 'string-trim-left)
+      (defalias 'pinboard-string-trim-left 'string-trim-left)
+    (defun pinboard-string-trim-left (string)
+      "Remove leading whitespace from STRING."
+      (if (string-match "\\`[ \t\n\r]+" string)
+	  (replace-match "" t t string)
+	string)))
 
-  (defsubst string-trim-right (string)
-    "Remove trailing whitespace from STRING."
-    (if (string-match "[ \t\n\r]+\\'" string)
-        (replace-match "" t t string)
-      string))
+  (if (fboundp 'string-trim-right)
+      (defalias 'pinboard-string-trim-right 'string-trim-right)
+    (defun pinboard-string-trim-right (string)
+      "Remove trailing whitespace from STRING."
+      (if (string-match "[ \t\n\r]+\\'" string)
+          (replace-match "" t t string)
+        string)))
 
-  (defsubst string-trim (string)
-    "Remove leading and trailing whitespace from STRING."
-    (string-trim-left (string-trim-right string))))
+  (if (fboundp 'string-trim)
+      (defalias 'pinboard-string-trim 'string-trim)
+    (defun pinboard-string-trim (string)
+      "Remove leading and trailing whitespace from STRING."
+      (pinboard-string-trim-left (pinboard-string-trim-right string))))
 
-(unless (fboundp 'define-error)
-  (defun define-error (name message &optional parent)
-    "Define NAME as a new error signal.
+  (if (fboundp 'define-error)
+      (defalias 'pinboard-define-error 'define-error)
+    (defun pinboard-define-error (name message &optional parent)
+      "Define NAME as a new error signal.
 MESSAGE is a string that will be output to the echo area if such an error
 is signaled without being caught by a `condition-case'.
 PARENT is either a signal or a list of signals from which it inherits.
 Defaults to `error'."
-    (unless parent (setq parent 'error))
-    (let ((conditions
-           (if (consp parent)
-               (apply #'nconc
-                      (mapcar (lambda (parent)
-                                (cons parent
-                                      (or (get parent 'error-conditions)
-                                          (error "Unknown signal `%s'" parent))))
-                              parent))
-             (cons parent (get parent 'error-conditions)))))
-      (put name 'error-conditions
-           (delete-dups (copy-sequence (cons name conditions))))
-      (when message (put name 'error-message message)))))
+      (unless parent (setq parent 'error))
+      (let ((conditions
+	     (if (consp parent)
+		 (apply #'nconc
+			(mapcar (lambda (parent)
+				  (cons parent
+					(or (get parent 'error-conditions)
+					    (error "Unknown signal `%s'" parent))))
+				parent))
+	       (cons parent (get parent 'error-conditions)))))
+	(put name 'error-conditions
+	     (delete-dups (copy-sequence (cons name conditions))))
+	(when message (put name 'error-message message))))))
 
 
 ;;;; Basic structures and variables
@@ -266,13 +276,13 @@ should not be changed here.  See http://pinboard.in/api/."
 (defun pinboard--record-request-time (method)
   "Record current time as the time of the most recent call to METHOD."
   (setf (pinboard--last-request-time method)
-        (time-to-seconds)))
+        (float-time)))
 
 (defun pinboard--wait-time (method)
   "Return the number of seconds to wait before calling METHOD again."
   (let ((rate-limit (pinboard--rate-limit method))
         (elapsed-time
-         (- (time-to-seconds)
+         (- (float-time)
             (pinboard--last-request-time method))))
     (if (< elapsed-time rate-limit)
         (- rate-limit elapsed-time)
@@ -430,7 +440,7 @@ METHOD, ARGUMENTS and CALLBACK have the same meanings as in `pinboard-request'."
     (pinboard-login)))
 
 ;;; Fetch and cache bookmarks
-(define-error 'pinboard-rate-limited "Fetching bookmarks is rate limited")
+(pinboard-define-error 'pinboard-rate-limited "Fetching bookmarks is rate limited")
 
 (defun pinboard-fetch-bookmarks (synchronous callback)
   "Fetch Pinboard bookmarks from server if necessary.
@@ -482,12 +492,12 @@ loaded bookmarks."
       ;; If bookmarks are already loaded, do nothing, since the cache
       ;; file does not contain any bookmark edits recorded in
       ;; `pinboard-bookmarks' since last caching the server response.
-      (funcall callback (hash-table-values pinboard-bookmarks))
+      (funcall callback (pinboard-hash-table-values pinboard-bookmarks))
     (message "Loading bookmarks from local cache")
     (with-temp-buffer
       (insert-file-contents pinboard-cache-file)
       (pinboard--parse-and-cache-bookmarks (read (copy-marker (point-min))))
-      (funcall callback (hash-table-values pinboard-bookmarks)))))
+      (funcall callback (pinboard-hash-table-values pinboard-bookmarks)))))
 
 (defun pinboard--fetch-bookmarks-from-server (synchronous callback)
   "Fetch bookmarks from Pinboard server.
@@ -522,7 +532,7 @@ rate-limited."
                           (print-length nil))
                       (print response (current-buffer))))
                   (pinboard--parse-and-cache-bookmarks response nil)
-                  (funcall callback (hash-table-values pinboard-bookmarks)))))))
+                  (funcall callback (pinboard-hash-table-values pinboard-bookmarks)))))))
 
           ;; Fall back to fetching 100 recent bookmarks
           (t
@@ -535,7 +545,7 @@ rate-limited."
                   (progress-reporter-done progress)
                   (pinboard--parse-and-cache-bookmarks
                    (plist-get response :posts) t)
-                  (funcall callback (hash-table-values pinboard-bookmarks))))))))))
+                  (funcall callback (pinboard-hash-table-values pinboard-bookmarks))))))))))
 
 (defun pinboard--parse-and-cache-bookmarks (response &optional partial)
   "Create `pinboard-bmk' structs for the parsed server JSON in RESPONSE.
@@ -1091,7 +1101,7 @@ calls."
             (remove tag pinboard-buffer-filters)
           nil))
   (pinboard--display-bookmarks
-   (cl-loop for bmk in (hash-table-values pinboard-bookmarks)
+   (cl-loop for bmk in (pinboard-hash-table-values pinboard-bookmarks)
             if
             (cl-subsetp pinboard-buffer-filters
                         (pinboard-bmk-tags bmk)
@@ -1123,7 +1133,7 @@ calls."
   (setq pinboard-buffer-filters nil)
   (pinboard--display-bookmarks
    (pinboard--sort-bookmarks-by-time
-    (hash-table-values pinboard-bookmarks))))
+    (pinboard-hash-table-values pinboard-bookmarks))))
 
 (defun pinboard-kill-bookmark-lines ()
   "Hide marked bookmarks from display."
@@ -1159,7 +1169,7 @@ calls."
 (defun pinboard-untag-bookmark ()
   (interactive)
   (let* ((bmks (pinboard--marked-bookmarks))
-         (tags (hash-table-keys (pinboard--bookmarks-tags bmks))))
+         (tags (pinboard-hash-table-keys (pinboard--bookmarks-tags bmks))))
     (if (not tags)
         (message "Bookmark(s) have no tags")
       (let ((tags (pinboard--read-tags
@@ -1474,7 +1484,7 @@ calls."
             (tags (split-string
                    (buffer-substring (point-at-bol 2) (point-at-eol 2))))
             (annotation
-             (string-trim
+             (pinboard-string-trim
               (buffer-substring (point-at-bol 3) (point-max)))))
         (let ((updated (copy-pinboard-bmk bmk))
               (window (selected-window)))
