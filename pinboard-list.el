@@ -7,7 +7,7 @@
 ;; Created:			31 August 2014
 ;; Version:                     0.1
 ;; Url:                         https://github.com/joddie/pinboard-list.el
-;; Package-Requires:            ((cl-lib "0.3") (pinboard-api "0.1") (queue "0.1.1"))
+;; Package-Requires:            ((emacs "24") (cl-lib "0.3") (pinboard-api "0.1") (queue "0.1.1"))
 
 ;; This file is NOT part of GNU Emacs.
 
