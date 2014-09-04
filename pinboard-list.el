@@ -91,6 +91,15 @@ See `pinboard--enqueue' and `pinboard--process-queue'.")
   (make-hash-table :test 'equal)
   "Hash table recording last Pinboard API request times.")
 
+(defvar pinboard--back-off-time
+  (make-hash-table :test 'equal)
+  "Hash table of Pinboard API methods that need extra rate-limiting.
+
+Methods are added to this table on returning HTTP status
+429 (\"Too Many Requests\").  Each subsequent 429 status doubles
+the back-off time.  A successful request clears the method from
+the list.")
+
 (defvar pinboard-global-map)
 (define-prefix-command 'pinboard-global-map)
 (define-key pinboard-global-map "l" 'pinboard-list-bookmarks)
@@ -237,8 +246,6 @@ headers in the result buffer before calling CALLBACK."
     (url-retrieve
      url
      (lambda (status)
-       (let ((url-error (plist-get status :error)))
-         (when url-error (error "Error fetching URL: %S" url-error)))
        (when (boundp 'url-http-end-of-headers)
          (goto-char url-http-end-of-headers))
        (funcall callback status))
@@ -257,11 +264,13 @@ should not be changed here.  See http://pinboard.in/api/."
     (_ 3)))
 
 (defun pinboard--rate-limit-key (method)
-  "Return the hash-key corresponding to METHOD in `pinboard--last-request-time'."
+  "Return the hash-key representing METHOD in `pinboard--last-request-time'.
+The same hash keys are also used in `pinboard--back-off-time'."
   (pcase method
     ((or "posts/all" "posts/recent") method)
     (_ t)))
 
+;; Request times
 (defun pinboard--last-request-time (method)
   "Return the time of the last call to METHOD."
   (gethash (pinboard--rate-limit-key method)
@@ -278,15 +287,66 @@ should not be changed here.  See http://pinboard.in/api/."
   (setf (pinboard--last-request-time method)
         (float-time)))
 
+;; Extra back-off times
+(defun pinboard--back-off-time (method)
+  "Return the extra rate-limiting time for METHOD, if any.
+
+Methods require extra rate limiting when the Pinboard API server
+returns HTTP status 429."
+  (gethash (pinboard--rate-limit-key method)
+           pinboard--back-off-time))
+
+(gv-define-setter pinboard--back-off-time (value method)
+  `(puthash (pinboard--rate-limit-key ,method)
+            ,value
+            pinboard--back-off-time))
+
+(defun pinboard--increase-back-off-time (method)
+  "Increase time to wait before calling METHOD again.
+
+The time to wait will initially be set to twice the normal
+interval between requests, then doubled with each successive 429
+status."
+  (let ((current-back-off-time (pinboard--back-off-time method)))
+    (setf (pinboard--back-off-time method)
+          (* 2
+             (or
+              ;; Double the current back-off time
+              current-back-off-time
+               ;; Double the normal rate limit
+              (pinboard--rate-limit method))))
+    (warn "Received HTTP 429 Too Many Requests for %s; waiting minimum %d seconds before next call."
+          method (pinboard--back-off-time method))))
+
+(defun pinboard--clear-back-off-time (method)
+  "Remove extra rate-limiting for METHOD."
+  (setf (pinboard--back-off-time method) nil))
+
+(defun pinboard--too-many-requests-p ()
+  "Return t if current buffer contains an HTTP response with status code 429.
+
+The Pinboard API responds with status 429, Too Many Requests to
+indicate the need for additional request rate-limiting."
+  (save-excursion
+    (goto-char (point-min))
+    (looking-at "HTTP/1.1 429")))
+
 (defun pinboard--wait-time (method)
-  "Return the number of seconds to wait before calling METHOD again."
-  (let ((rate-limit (pinboard--rate-limit method))
+  "Return the number of seconds to wait before calling METHOD again.
+
+Normally, this is determined by the limits set by the Pinboard
+API and defined in `pinboard--rate-limit'.  In case of HTTP 429
+Too Many Requests responses, wait times will increase by a factor
+of two with each failure."
+  (let ((back-off-time (pinboard--back-off-time method))
+        (rate-limit (pinboard--rate-limit method))
         (elapsed-time
          (- (float-time)
             (pinboard--last-request-time method))))
-    (if (< elapsed-time rate-limit)
-        (- rate-limit elapsed-time)
-      0)))
+    (or back-off-time
+        (if (< elapsed-time rate-limit)
+            (- rate-limit elapsed-time)
+          0))))
 
 (defun pinboard-retrieve-json (method arguments synchronous callback
                                &rest json-arguments)
@@ -294,7 +354,7 @@ should not be changed here.  See http://pinboard.in/api/."
 
 SYNCHRONOUS selects a blocking or non-blocking request.  This
 function respects Pinboard's rate limits.  If rate-limiting is
-needed, as determined by `pinboard-wait-time', it will either
+needed, as determined by `pinboard--wait-time', it will either
 block or use a timer before making the request, depending on the
 value of SYNCHRONOUS.
 
@@ -319,11 +379,17 @@ JSON response into Lisp objects."
                 (pinboard-retrieve
                  url synchronous
                  (lambda (_)
-                   (condition-case _
-                       (let ((response (apply #'pinboard-json-read json-arguments)))
-                         (funcall callback t response))
-                     (json-readtable-error
-                      (funcall callback nil nil))))))))
+                   (if (pinboard--too-many-requests-p)
+                       ;; Increase wait time before next request
+                       (progn
+                         (pinboard--increase-back-off-time method)
+                         (funcall callback nil nil))
+                     (pinboard--clear-back-off-time method)
+                     (condition-case nil
+                         (let ((response (apply #'pinboard-json-read json-arguments)))
+                           (funcall callback t response))
+                       (json-readtable-error
+                        (funcall callback nil nil)))))))))
     (let* ((wait-time (pinboard--wait-time method))
            (rate-limited (plusp wait-time)))
       (if synchronous
