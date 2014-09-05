@@ -136,27 +136,19 @@ Removes all Pinboard bookmarks and tags from memory and removes
 	(maphash (lambda (_k v) (push v values)) hash-table)
 	values)))
 
-  (if (fboundp 'string-trim-left)
-      (defalias 'pinboard-string-trim-left 'string-trim-left)
-    (defun pinboard-string-trim-left (string)
-      "Remove leading whitespace from STRING."
-      (if (string-match "\\`[ \t\n\r]+" string)
-	  (replace-match "" t t string)
-	string)))
-
-  (if (fboundp 'string-trim-right)
-      (defalias 'pinboard-string-trim-right 'string-trim-right)
-    (defun pinboard-string-trim-right (string)
-      "Remove trailing whitespace from STRING."
-      (if (string-match "[ \t\n\r]+\\'" string)
-          (replace-match "" t t string)
-        string)))
-
   (if (fboundp 'string-trim)
       (defalias 'pinboard-string-trim 'string-trim)
     (defun pinboard-string-trim (string)
       "Remove leading and trailing whitespace from STRING."
-      (pinboard-string-trim-left (pinboard-string-trim-right string))))
+      (cl-flet ((string-trim-left (string)
+                  (if (string-match "\\`[ \t\n\r]+" string)
+                      (replace-match "" t t string)
+                    string))
+                (string-trim-right (string)
+                  (if (string-match "[ \t\n\r]+\\'" string)
+                      (replace-match "" t t string)
+                    string))))
+      (string-trim-left (string-trim-right string))))
 
   (if (fboundp 'define-error)
       (defalias 'pinboard-define-error 'define-error)
