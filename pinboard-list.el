@@ -4,8 +4,8 @@
 
 ;; Author:			Jon Oddie <jonxfield at gmail.com>
 ;; Created:			22 August 2014
-;; Created:			31 August 2014
-;; Version:                     0.1
+;; Updated:			6 September 2014
+;; Version:                     0.2
 ;; Url:                         https://github.com/joddie/pinboard-list.el
 ;; Package-Requires:            ((emacs "24") (cl-lib "0.3") (pinboard-api "0.1") (queue "0.1.1"))
 
@@ -100,11 +100,20 @@ Methods are added to this table on returning HTTP status
 the back-off time.  A successful request clears the method from
 the list.")
 
-(defvar pinboard-global-map)
-(define-prefix-command 'pinboard-global-map)
-(define-key pinboard-global-map "l" 'pinboard-list-bookmarks)
-(define-key pinboard-global-map "t" 'pinboard-list-tags)
+;;;###autoload
+(defvar pinboard-global-map
+  (let ((map (make-sparse-keymap)))
+    (define-key map "l" 'pinboard-list-bookmarks)
+    (define-key map "t" 'pinboard-list-tags)
+    map)
+  "Keymap with bindings for top-level pinboard-list commands.
 
+This is intended to be bound to a prefix key, for example:
+\(global-set-key (kbd \"C-x r p\") 'pinboard-global-map)")
+;;;###autoload
+(defalias 'pinboard-global-map pinboard-global-map)
+
+;;;###autoload
 (defun pinboard--clear-cache ()
   "Clear all locally-cached Pinboard data.
 
