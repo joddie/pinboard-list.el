@@ -103,8 +103,10 @@ the list.")
 ;;;###autoload
 (defvar pinboard-global-map
   (let ((map (make-sparse-keymap)))
-    (define-key map "l" 'pinboard-list-bookmarks)
-    (define-key map "t" 'pinboard-list-tags)
+    (define-key map "l" #'pinboard-list-bookmarks)
+    (define-key map "f" #'pinboard-list-bookmarks-filtered)
+    (define-key map "t" #'pinboard-list-tags)
+    (define-key map "b" #'pinboard-bookmark-jump)
     map)
   "Keymap with bindings for top-level pinboard-list commands.
 
@@ -991,26 +993,55 @@ Deleting:
   (tabulated-list-init-header))
 
 ;;;###autoload
-(defun pinboard-list-bookmarks (&optional tag)
+(defun pinboard-list-bookmarks ()
+  (interactive)
+  (pinboard-fetch-bookmarks
+   nil
+   (lambda (bookmarks)
+     (pop-to-buffer
+      (pinboard--make-bookmark-list-buffer
+       (pinboard--sort-bookmarks-by-time bookmarks))))))
+
+(defun pinboard-list-bookmarks-filtered (tags)
   (interactive
    (list
-    (when current-prefix-arg
+    (progn
       (unless pinboard-tags
         (pinboard-maybe-login)
         (pinboard-fetch-tags t 'ignore))
-      (completing-read "Bookmarks tagged: " pinboard-tags nil 'confirm))))
-  (pinboard-maybe-login)
+      (pinboard--read-tags "Bookmarks tagged: "))))
   (pinboard-fetch-bookmarks
    nil
-   (lambda (bmks)
-     (with-current-buffer (get-buffer-create "*pinboard*")
-       (let ((inhibit-read-only t))
-         (erase-buffer)
-         (pinboard-bookmarks-mode))
-       (pinboard--display-bookmarks
-        (pinboard--sort-bookmarks-by-time bmks))
-       (when tag (pinboard-add-tag-filter tag))
+   (lambda (bookmarks)
+     (with-current-buffer
+         (pinboard--make-bookmark-list-buffer
+          (pinboard--sort-bookmarks-by-time bookmarks))
+       (mapc #'pinboard-add-tag-filter tags)
        (pop-to-buffer (current-buffer))))))
+
+(defun pinboard-bookmark-jump (title)
+  (interactive
+   (list
+    (pinboard-fetch-bookmarks
+     t
+     (lambda (bookmarks)
+       (completing-read "Jump to bookmark: "
+                        (mapcar #'pinboard-bmk-title bookmarks)
+                        nil t)))))
+  ;; FIXME :-/
+  (cl-loop for bmk being the hash-values of pinboard-bookmarks
+           if (string= (pinboard-bmk-title bmk) title)
+           do (pinboard-bookmark-open bmk)
+           and return bmk))
+
+(defun pinboard--make-bookmark-list-buffer (bookmarks)
+  (with-current-buffer (get-buffer-create "*pinboard*")
+    (let ((inhibit-read-only t))
+      (erase-buffer)
+      (pinboard-bookmarks-mode))
+    (pinboard--display-bookmarks
+     (pinboard--sort-bookmarks-by-time bookmarks))
+    (current-buffer)))
 
 (defun pinboard--sort-bookmarks-by-time (bmks)
   (sort bmks
@@ -1130,14 +1161,14 @@ calls."
          pinboard-visible-columns (list column)))
   (pinboard--update-bookmark-list-format))
 
-(defun pinboard-bookmark-open ()
-  (interactive)
-  (browse-url (pinboard-bmk-url (pinboard-bookmark-at-point))))
+(defun pinboard-bookmark-open (bookmark)
+  (interactive (list (pinboard-bookmark-at-point)))
+  (browse-url (pinboard-bmk-url bookmark)))
 
-(defun pinboard-bookmark-open-other-window ()
-  (interactive)
+(defun pinboard-bookmark-open-other-window (bookmark)
+  (interactive (list (pinboard-bookmark-at-point)))
   (save-window-excursion
-    (eww (pinboard-bmk-url (pinboard-bookmark-at-point))))
+    (eww (pinboard-bmk-url bookmark)))
   (switch-to-buffer-other-window "*eww*"))
 
 (defun pinboard-where ()
@@ -1645,7 +1676,7 @@ calls."
   (interactive)
   (let ((name (pinboard--tag-at-point)))
     (message "Displaying bookmarks tagged `%s'" name)
-    (pinboard-list-bookmarks name)))
+    (pinboard-list-bookmarks-filtered (list name))))
 
 ;; FIXME: Rename multiple tags at once
 (defun pinboard-rename-tag ()
