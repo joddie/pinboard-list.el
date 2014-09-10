@@ -128,6 +128,9 @@ Removes all Pinboard bookmarks and tags from memory and removes
   (when (file-exists-p pinboard-cache-file)
     (delete-file pinboard-cache-file)))
 
+;;;; Defvars from URL package
+(defvar url-http-response-status)
+(defvar url-http-end-of-headers)
 
 ;;;; Useful functions from subr-x for older emacs
 (eval-and-compile
@@ -330,9 +333,7 @@ status."
 
 The Pinboard API responds with status 429, Too Many Requests to
 indicate the need for additional request rate-limiting."
-  (save-excursion
-    (goto-char (point-min))
-    (looking-at "HTTP/1.1 429")))
+  (equal url-http-response-status 429))
 
 (defun pinboard--wait-time (method)
   "Return the number of seconds to wait before calling METHOD again.
