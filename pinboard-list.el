@@ -1205,9 +1205,9 @@ calls."
     (eww (pinboard-bmk-url bookmark)))
   (switch-to-buffer-other-window "*eww*"))
 
-(defun pinboard-where ()
-  (interactive)
-  (message "%s" (pinboard-bmk-url (pinboard-bookmark-at-point))))
+(defun pinboard-where (bookmark)
+  (interactive (list (pinboard-bookmark-at-point)))
+  (message "%s" (pinboard-bmk-url bookmark)))
 
 ;;; Filtering commands
 (defun pinboard-add-tag-filter (tag)
