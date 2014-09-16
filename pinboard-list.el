@@ -4,8 +4,8 @@
 
 ;; Author:			Jon Oddie <jonxfield at gmail.com>
 ;; Created:			22 August 2014
-;; Updated:			6 September 2014
-;; Version:                     0.2
+;; Updated:			18 September 2014
+;; Version:                     0.4
 ;; Url:                         https://github.com/joddie/pinboard-list.el
 ;; Package-Requires:            ((emacs "24") (cl-lib "0.3") (pinboard-api "0.1") (queue "0.1.1"))
 
@@ -131,6 +131,7 @@ Removes all Pinboard bookmarks and tags from memory and removes
 ;;;; Defvars from URL package
 (defvar url-http-response-status)
 (defvar url-http-end-of-headers)
+
 
 ;;;; Useful functions from subr-x for older emacs
 (eval-and-compile
@@ -512,112 +513,144 @@ METHOD, ARGUMENTS and CALLBACK have the same meanings as in `pinboard-request'."
 ;;; Fetch and cache bookmarks
 (pinboard-define-error 'pinboard-rate-limited "Fetching bookmarks is rate limited")
 
-(defun pinboard-fetch-bookmarks (synchronous callback)
+(defun pinboard-fetch-bookmarks (synchronous callback &optional force-update)
   "Fetch Pinboard bookmarks from server if necessary.
 
 SYNCHRONOUS specifies a blocking or non-blocking call.  CALLBACK
 should be a function of one argument, a list of all bookmarks
 fetched."
-  ;; Fetch the time and date of last bookmarks update
+  (cl-labels
+      ((load-from-cache-with-fallback ()
+         (pinboard--load-from-cache
+          (lambda () (success "Cached bookmarks may be out of date"))
+          (lambda ()
+            (pinboard--remove-cache)
+            (pinboard--fetch-bookmarks-from-server synchronous #'success #'failure))))
+       
+       (fetch-from-server-with-fallback ()
+         (pinboard--fetch-bookmarks-from-server
+          synchronous
+          #'success
+          (lambda ()
+            (pinboard--load-from-cache
+             (lambda ()
+               (success "Showing cached bookmarks (possibly out of date)"))
+             #'failure))))
+       
+       (success (&optional msg)
+         (when msg (message "%s" msg))
+         (funcall callback (hash-table-values pinboard-bookmarks)))
+       
+       (failure (&optional (msg "Bookmark loading failed."))
+         (when msg (message "%s" msg))
+         (funcall callback nil)))
+    
+    (cond
+      ((not (null pinboard-bookmarks))
+       (if force-update
+           (pinboard--fetch-bookmarks-from-server
+            synchronous
+            #'success
+            (lambda () (success "Bookmarks may be out of date.")))
+         ;; not force-update
+         (success)))
+      
+      ((pinboard--cache-exists-p)       ; not in-memory
+       (pinboard--fetch-update-time
+        synchronous
+        (lambda (update-time)
+          (if (pinboard--cache-up-to-date-p update-time)
+              (load-from-cache-with-fallback)
+            (fetch-from-server-with-fallback)))
+        (lambda ()
+          (pinboard--load-from-cache
+           (lambda () (success "Bookmarks may be out of date."))
+           #'failure))))
+
+      (t                                ; neither in memory nor in cache
+       (pinboard--fetch-bookmarks-from-server
+        synchronous
+        #'success
+        #'failure)))))
+
+(defun pinboard--fetch-update-time (synchronous on-success on-failure)
   (pinboard-retrieve-json
    "posts/update" nil synchronous
    (lambda (success response)
-     (if (not success)
-         (progn
-           (message "Error checking for bookmark updates")
-           (pinboard--fetch-bookmarks-from-cache callback)))
-     ;; Check whether bookmarks on server are newer than cache file
-     (let ((update-time
-            (pinboard-parse-time-string
-             (plist-get response :update_time)))
-           (cached-time
-            (nth 5 (file-attributes pinboard-cache-file))))
-       (if (or (not cached-time)
-               (time-less-p cached-time update-time))
-           ;; Try to fetch updated bookmarks from server
-           (condition-case lossage
-               (pinboard--fetch-bookmarks-from-server synchronous callback)
-             ;; Use the on-disk cache or bookmarks in memory when rate-limited
-             (pinboard-rate-limited
-              (message "Using cached bookmarks due to rate-limiting (%d seconds left)"
-                       (cdr lossage))
-              (pinboard--fetch-bookmarks-from-cache callback)))
-         ;; There are no updates newer than the cache, so use it by preference
-         (message "No updates to fetch")
-         (condition-case _
-             (pinboard--fetch-bookmarks-from-cache callback)
-           ((read-error file-error)
-            ;; Fall back to fetching from server if reading from cache
-            ;; failed for some reason.  If this request is
-            ;; rate-limited then there is nothing else to try.
-            (message "Loading from local cache failed; fetching from server")
-            (pinboard--fetch-bookmarks-from-server synchronous callback))))))))
+     (if success
+         (let ((update-time
+                (pinboard-parse-time-string
+                 (plist-get response :update_time))))
+           (funcall on-success update-time))
+       (funcall on-failure)))))
 
-(defun pinboard--fetch-bookmarks-from-cache (callback)
-  "Fetch bookmarks from `pinboard-cache-file', if not already in memory.
-
-CALLBACK is a function of one argument which is called with the
-loaded bookmarks."
-  (if pinboard-bookmarks
-      ;; If bookmarks are already loaded, do nothing, since the cache
-      ;; file does not contain any bookmark edits recorded in
-      ;; `pinboard-bookmarks' since last caching the server response.
-      (funcall callback (pinboard-hash-table-values pinboard-bookmarks))
-    (message "Loading bookmarks from local cache")
-    (with-temp-buffer
-      (insert-file-contents pinboard-cache-file)
-      (pinboard--parse-and-cache-bookmarks (read (copy-marker (point-min))))
-      (funcall callback (pinboard-hash-table-values pinboard-bookmarks)))))
-
-(defun pinboard--fetch-bookmarks-from-server (synchronous callback)
-  "Fetch bookmarks from Pinboard server.
-
-SYNCHRONOUS specifies a blocking or non-blocking call.
-CALLBACK is a function of one argument which is called with the
-loaded bookmarks.
-
-Fetches all bookmaks if the \"posts/all\" method is not
-rate-limited.  Otherwise, fetches the 100 most recent bookmarks
-if the \"posts/recent\" method is not rate-limited, or signals a
-`pinboard-rate-limited' condition if both methods are
-rate-limited."
-  (message "Fetching bookmarks from server")
+(defun pinboard--fetch-bookmarks-from-server (synchronous on-success on-failure)
   (let ((posts-all-wait (pinboard--wait-time "posts/all"))
         (posts-recent-wait (pinboard--wait-time "posts/recent")))
     (cond ((and (plusp posts-all-wait) (plusp posts-recent-wait))
-           (signal 'pinboard-rate-limited
-                   (min posts-all-wait posts-recent-wait)))
-
-          ;; Load all bookmarks by preference when possible
+           (funcall on-failure))
           ((<= posts-all-wait posts-recent-wait)
-           (let ((progress (make-progress-reporter "Loading all bookmarks from server ...")))
-             (pinboard-retrieve-json
-              "posts/all" nil
-              synchronous
-              (lambda (success response)
-                (when success
-                  (progress-reporter-done progress)
-                  (with-temp-file pinboard-cache-file
-                    (let ((print-level nil)
-                          (print-length nil))
-                      (print response (current-buffer))))
-                  (pinboard--parse-and-cache-bookmarks response nil)
-                  (funcall callback (pinboard-hash-table-values pinboard-bookmarks)))))))
-
-          ;; Fall back to fetching 100 recent bookmarks
+           (pinboard--fetch-all-from-server synchronous on-success on-failure))
           (t
-           (let ((progress (make-progress-reporter "Loading recent bookmarks from server ...")))
-             (pinboard-retrieve-json
-              "posts/recent" `((count 100))
-              synchronous
-              (lambda (success response)
-                (when success
-                  (progress-reporter-done progress)
-                  (pinboard--parse-and-cache-bookmarks
-                   (plist-get response :posts) t)
-                  (funcall callback (pinboard-hash-table-values pinboard-bookmarks))))))))))
+           (pinboard--fetch-recent-from-server synchronous on-success on-failure)))))
 
-(defun pinboard--parse-and-cache-bookmarks (response &optional partial)
+(defun pinboard--fetch-all-from-server (synchronous on-success on-failure)
+  (let ((progress (make-progress-reporter
+                   "Loading all bookmarks from server ...")))
+    (pinboard-retrieve-json
+     "posts/all" nil
+     synchronous
+     (lambda (success response)
+       (if (not success)
+           (funcall on-failure)
+         (progress-reporter-done progress)
+         (pinboard--cache-response response)
+         (pinboard--parse-bookmarks response nil)
+         (funcall on-success))))))
+
+(defun pinboard--fetch-recent-from-server (synchronous on-success on-failure)
+  (let ((progress (make-progress-reporter
+                   "Loading recent bookmarks from server ...")))           
+    (pinboard-retrieve-json
+     "posts/recent" `((count 100))
+     synchronous
+     (lambda (success response)
+       (if (not success)
+           (funcall on-failure)
+         (progress-reporter-done progress)
+         (pinboard--parse-bookmarks (plist-get response :posts) t)
+         (funcall on-success))))))
+
+;;; Cache file handling
+(defun pinboard--cache-exists-p ()
+  (file-exists-p pinboard-cache-file))
+
+(defun pinboard--cache-response (response)
+  (with-temp-file pinboard-cache-file
+    (let ((print-level nil)
+          (print-length nil))
+      (print response (current-buffer)))))
+
+(defun pinboard--remove-cache ()
+  (ignore-errors
+    (delete-file pinboard-cache-file)))
+
+(defun pinboard--cache-up-to-date-p (update-time)
+  (let* ((cache-time (nth 5 (file-attributes pinboard-cache-file))))
+    (and cache-time
+         (time-less-p update-time cache-time))))
+
+(defun pinboard--load-from-cache (on-success on-failure)
+  (condition-case _
+      (with-temp-buffer
+        (insert-file-contents pinboard-cache-file)
+        (pinboard--parse-bookmarks (read (copy-marker (point-min))))
+        (funcall on-success))
+    (error
+     (funcall on-failure))))
+
+;;; Bookmark JSON parsing
+(defun pinboard--parse-bookmarks (response &optional partial)
   "Create `pinboard-bmk' structs for the parsed server JSON in RESPONSE.
 
 PARTIAL specifies that RESPONSE contains only recent bookmarks.
@@ -659,8 +692,8 @@ In this case the contents of `pinboard-bookmarks' and
      :shared (string= shared "yes")
      :time time)))
 
-;; Emacs has parse-time-iso8601-regexp, but it is undocumented and
-;; does not seem to work on times that end with "Z" for UTC, as
+;; Recent Emacs have parse-time-iso8601-regexp, but it is undocumented
+;; and does not seem to work on times that end with "Z" for UTC, as
 ;; Pinboard's updated-times currently do.  Raise an Emacs bug for
 ;; this?
 (defvar pinboard-time-regexp
@@ -689,9 +722,7 @@ In this case the contents of `pinboard-bookmarks' and
               (minute (match-number 5))
               (second (match-number 6)))
           (encode-time second minute hour day month year 0)))
-    ;; Try falling back to Emacs's built-in parsing function
-    (warn "Pinboard response `%s' does not match expected format")
-    (parse-iso8601-time-string time)))
+    (error "Pinboard response `%s' does not match expected format" time)))
 
 ;;; Update bookmarks
 (defun pinboard--update-bookmark (bmk synchronous callback)
@@ -986,7 +1017,7 @@ Deleting:
 \\[pinboard-mark-for-deletion] -- mark bookmark at point for deletion
 \\[pinboard-do-flagged-delete-bookmarks] -- delete bookmarks marked for deletion"
   (setq tabulated-list-entries #'pinboard--tabulated-list-entries)
-  (setq-local tabulated-list-revert-hook #'pinboard--refresh-bookmarks)
+  (add-hook 'tabulated-list-revert-hook #'pinboard--refresh-bookmarks nil t)
   (setq tabulated-list-format
         (pinboard--make-bookmark-list-format
          pinboard-visible-columns
@@ -1146,7 +1177,9 @@ calls."
    (lambda (bmks)
      ;; FIXME: Filter refreshed bookmarks.
      (pinboard--display-bookmarks
-      (pinboard--sort-bookmarks-by-time bmks)))))
+      (pinboard--sort-bookmarks-by-time bmks)))
+   t                                    ; force update
+   ))
 
 
 ;;;; Bookmark buffer commands
@@ -1636,8 +1669,8 @@ calls."
   (setq tabulated-list-format pinboard-tag-list-format)
   (setq tabulated-list-sort-key '("#" . t))
   (setq tabulated-list-padding 1)
-  (setq tabulated-list-entries 'pinboard--tag-tabulated-list-entries)
-  (setq-local tabulated-list-revert-hook 'pinboard--refresh-tags)
+  (setq tabulated-list-entries #'pinboard--tag-tabulated-list-entries)
+  (add-hook 'tabulated-list-revert-hook #'pinboard--refresh-tags nil t)
   (tabulated-list-init-header))
 
 ;;;###autoload
