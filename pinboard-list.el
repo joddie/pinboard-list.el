@@ -969,6 +969,7 @@ OLD and NEW are both characters used to mark bookmarks."
     (define-key map (kbd "% m") #'pinboard-mark-by-title)
     (define-key map (kbd "% u") #'pinboard-mark-by-url)
     (define-key map "j" #'pinboard-jump-to-bookmark)
+    (define-key map (kbd "C-w") #'pinboard-copy-as-kill)
     map))
 
 (define-derived-mode pinboard-bookmarks-mode pinboard-tabulated-list-mode
@@ -981,6 +982,7 @@ Commands:
 \\[pinboard-where] -- show bookmark URL in the echo area
 \\[pinboard-show-annotation] -- show full bookmark details in another window
 \\[pinboard-show-all-annotations] -- show details of all bookmarks in another window
+\\[pinboard-copy-as-kill] -- copy bookmark URL (etc.) to kill-ring
 \\[pinboard-jump-to-bookmark] -- jump to a bookmark by title
 \\[pinboard-toggle-column] -- toggle a displayed column on or off
 
@@ -1515,6 +1517,35 @@ calls."
    (lambda ()
      (string= title
               (pinboard-bmk-title (pinboard-bookmark-at-point))))))
+
+;;; Copy
+(defvar pinboard-format-kill-function #'pinboard-default-format-kill
+  "Function for formatting Pinboard bookmarks copied to the kill-ring.
+
+The function should take a single argument, a `pinboard-bmk'
+structure, and return a string to copy to the kill-ring.")
+
+(defun pinboard-default-format-kill (bookmark)
+  "Default value of `pinboard-copy-format-function'."
+  (format "%s <%s>"
+          (pinboard-bmk-title bookmark)
+          (pinboard-bmk-url bookmark)))
+
+(defun pinboard-copy-as-kill (with-details)
+  "Copy the bookmark at point to the kill-ring.
+
+Without a prefix arg, copies only the bookmark URL.  With a
+prefix arg, formats the bookmark using
+`pinboard-copy-format-function'.  By default, this copies the
+bookmark in the format `TITLE <URL>'.)"
+  (interactive "P")
+  (let* ((bmk (pinboard-bookmark-at-point))
+         (string
+          (if with-details
+              (funcall pinboard-format-kill-function bmk)
+            (pinboard-bmk-url bmk))))
+    (message "%s" string)
+    (kill-new string)))
 
 
 ;;;; Reading tags
