@@ -1709,12 +1709,14 @@ Commands:
         (bn (gethash (elt b 0) pinboard-tags)))
     (< an bn)))
 
-(defun pinboard-tag-follow ()
-  "List bookmarks with the tag at point."
-  (interactive)
-  (let ((name (pinboard--tag-at-point)))
-    (message "Displaying bookmarks tagged `%s'" name)
-    (pinboard-list-bookmarks-filtered (list name))))
+(defun pinboard-tag-follow (tag)
+  "List bookmarks tagged with TAG in another buffer.
+
+Interactively, in a `pinboard-list-tags' buffer, lists bookmarks
+with the tag at point."
+  (interactive (list (pinboard--tag-at-point)))
+  (message "Displaying bookmarks tagged `%s'" tag)
+  (pinboard-list-bookmarks-filtered (list tag)))
 
 ;; FIXME: Rename multiple tags at once
 (defun pinboard-rename-tag ()
