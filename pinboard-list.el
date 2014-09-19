@@ -1593,9 +1593,10 @@ bookmark in the format `TITLE <URL>'.)"
 ;;;; Bookmark popup/editing
 
 (defvar pinboard-edit-template
-  "# Edit bookmark title and annotation below.
-# The first line is the title, remaining lines are the annotation.
-# Lines beginning with a `#' character will be removed.
+  "# Edit bookmark below.
+# The first line is the bookmark title, second line a list of
+# tags.  The rest of the buffer is the bookmark annotation.  
+# Lines beginning with a `#' character will be removed.  
 # Use C-c C-c to save changes or C-c C-k to cancel.
 ")
 
