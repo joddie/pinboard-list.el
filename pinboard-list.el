@@ -1662,10 +1662,14 @@ calls."
 
 (define-derived-mode pinboard-tags-mode pinboard-tabulated-list-mode
   "Pinboard-tags"
-  "Major mode for viewing a list of Pinboard tags.
+  "Major mode for viewing and editing a list of Pinboard tags.
 
-\\<pinboard-tags-mode-map>
-"
+Commands:
+\\[pinboard-tag-follow] -- show bookmarks with this tag in another buffer
+\\[pinboard-jump-to-tag] -- move point to line containing a tag by name
+\\[pinboard-rename-tag] -- rename a tag, or merge with another
+\\[pinboard-mark-for-deletion] -- mark tag at point for deletion
+\\[pinboard-do-flagged-delete-tags] -- permanently delete tags marked for deletion"
   (setq tabulated-list-format pinboard-tag-list-format)
   (setq tabulated-list-sort-key '("#" . t))
   (setq tabulated-list-padding 1)
