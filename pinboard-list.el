@@ -1059,20 +1059,23 @@ documentation for a list of commands."
        (mapc #'pinboard-add-tag-filter tags)
        (pop-to-buffer (current-buffer))))))
 
-(defun pinboard-bookmark-jump (title)
-  (interactive
-   (list
-    (pinboard-fetch-bookmarks
-     t
-     (lambda (bookmarks)
-       (completing-read "Jump to bookmark: "
-                        (mapcar #'pinboard-bmk-title bookmarks)
-                        nil t)))))
-  ;; FIXME :-/
-  (cl-loop for bmk being the hash-values of pinboard-bookmarks
-           if (string= (pinboard-bmk-title bmk) title)
-           do (pinboard-bookmark-open bmk)
-           and return bmk))
+(defun pinboard-bookmark-jump ()
+  "Prompt for a Pinboard bookmark by title and open it."
+  (interactive)
+  (pinboard-fetch-bookmarks
+   t
+   (lambda (bookmarks)
+     (let ((title-index (make-hash-table :test 'equal)))
+       (dolist (bmk bookmarks)
+         (puthash (pinboard-bmk-title bmk) bmk
+                  title-index))
+       (let* ((title
+               (completing-read "Jump to bookmark: " title-index nil t))
+              (bookmark
+               (gethash title title-index)))
+         (if bookmark
+             (pinboard-bookmark-open bookmark)
+           (error "No bookmark with title `%s' found." title)))))))
 
 (defun pinboard--make-bookmark-list-buffer (bookmarks)
   (with-current-buffer (get-buffer-create "*pinboard*")
