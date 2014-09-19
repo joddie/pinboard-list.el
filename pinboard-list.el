@@ -1026,6 +1026,10 @@ Deleting:
 
 ;;;###autoload
 (defun pinboard-list-bookmarks ()
+  "List all Pinboard bookmarks in a buffer.
+
+The bookmark-list buffer is in `pinboard-bookmarks-mode': see its
+documentation for a list of commands."
   (interactive)
   (pinboard-fetch-bookmarks
    nil
@@ -1035,6 +1039,10 @@ Deleting:
        (pinboard--sort-bookmarks-by-time bookmarks))))))
 
 (defun pinboard-list-bookmarks-filtered (tags)
+  "List Pinboard bookmarks filtered by one or more tags in a buffer.
+
+The bookmark-list buffer is in `pinboard-bookmarks-mode': see its
+documentation for a list of commands."
   (interactive
    (list
     (progn
