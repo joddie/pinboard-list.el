@@ -754,21 +754,28 @@ In this case the contents of `pinboard-bookmarks' and
     (replace "yes")))
 
 ;;; Fetch tags
-(defun pinboard-fetch-tags (synchronous callback)
-  (pinboard-retrieve-json
-   "tags/get" nil
-   synchronous
-   (lambda (success response)
-     (if (not success)
-         (error "Failed to fetch list of tags")
-       (setq pinboard-tags
-             (make-hash-table :test 'pinboard-case-fold))
-       (pcase-dolist (`(,name . ,count) response)
-         (puthash name (string-to-number count)
-                  pinboard-tags))
-       (funcall callback pinboard-tags)))
-   :object-type 'alist
-   :key-type 'string))
+(defun pinboard-fetch-tags (synchronous callback &optional force-update)
+  (cl-labels
+      ((fetch-from-server ()
+         (pinboard-retrieve-json
+          "tags/get" nil
+          synchronous
+          (lambda (success response)
+            (if (not success)
+                (error "Fetching tags failed")
+              (parse response)))
+          :object-type 'alist
+          :key-type 'string))
+       (parse (response)
+         (setq pinboard-tags
+               (make-hash-table :test 'pinboard-case-fold))
+         (pcase-dolist (`(,name . ,count) response)
+           (puthash name (string-to-number count)
+                    pinboard-tags))
+         (funcall callback pinboard-tags)))
+    (if (or (null pinboard-tags) force-update)
+        (fetch-from-server)
+      (funcall callback pinboard-tags))))
 
 
 ;;;; List-buffer utilities
@@ -1048,9 +1055,7 @@ documentation for a list of commands."
   (interactive
    (list
     (progn
-      (unless pinboard-tags
-        (pinboard-maybe-login)
-        (pinboard-fetch-tags t 'ignore))
+      (pinboard-fetch-tags t 'ignore)
       (pinboard--read-tags "Bookmarks tagged: "))))
   (pinboard-fetch-bookmarks
    nil
@@ -1724,14 +1729,16 @@ Commands:
 (defun pinboard-list-tags ()
   (interactive)
   (pinboard-maybe-login)
-  (pinboard-fetch-tags t 'ignore)
-  (with-current-buffer (get-buffer-create "*pinboard tags*")
-    (let ((inhibit-read-only t))
-      (erase-buffer)
-      (pinboard-tags-mode))
-    (setq tabulated-list-entries 'pinboard--tag-tabulated-list-entries)
-    (tabulated-list-print)
-    (pop-to-buffer (current-buffer))))
+  (pinboard-fetch-tags
+   nil
+   (lambda (_)
+     (with-current-buffer (get-buffer-create "*pinboard tags*")
+       (let ((inhibit-read-only t))
+         (erase-buffer)
+         (pinboard-tags-mode))
+       (setq tabulated-list-entries 'pinboard--tag-tabulated-list-entries)
+       (tabulated-list-print)
+       (pop-to-buffer (current-buffer))))))
 
 (defun pinboard--tag-at-point () (tabulated-list-get-id))
 
@@ -1744,7 +1751,7 @@ Commands:
 
 (defun pinboard--refresh-tags ()
   (let ((progress (make-progress-reporter "Reverting tags...")))
-    (pinboard-fetch-tags t 'ignore)
+    (pinboard-fetch-tags t 'ignore t)
     (progress-reporter-done progress)))
 
 (defun pinboard--sort-tag-numeric (a b)
