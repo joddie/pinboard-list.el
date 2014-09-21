@@ -1561,23 +1561,26 @@ bookmark in the format `TITLE <URL>'.)"
     map))
 
 (defun pinboard--read-tags (prompt &optional tags)
-  (let ((tags-completion-table
-         (or tags pinboard-tags))
-        (post-completion
-         (lambda (_ status)
-                     (when (eq status 'finished)
-                       (insert " ")))))
-    (minibuffer-with-setup-hook
-        (lambda ()
-          (add-hook 'completion-at-point-functions
-                    (lambda ()
-                      (pcase (bounds-of-thing-at-point 'symbol)
-                        (`(,start . ,end)
-                          (list start end tags-completion-table
-                                :exit-function post-completion))
-                        (_ nil)))
-                    nil t))
-      (split-string (read-from-minibuffer prompt nil pinboard--read-tags-map)))))
+  (minibuffer-with-setup-hook
+      (lambda ()
+        (pinboard--enable-tag-completion tags))
+    (split-string (read-from-minibuffer prompt nil pinboard--read-tags-map))))
+
+(defun pinboard--enable-tag-completion (&optional tags)
+  (let ((tags (or tags pinboard-tags)))
+    (cl-labels
+        ((completion-function ()
+           (pcase (bounds-of-thing-at-point 'symbol)
+             (`(,start . ,end)
+               (list start end tags
+                     :exit-function #'post-completion))
+             (_ nil)))
+         (post-completion (_ status)
+           (when (eq status 'finished)
+             (insert " "))))
+      (add-hook 'completion-at-point-functions
+                #'completion-function
+                nil t))))
 
 
 ;;;; Bookmark details list
@@ -1601,17 +1604,41 @@ bookmark in the format `TITLE <URL>'.)"
   "# Edit bookmark below.
 # The first line is the bookmark title, second line a list of
 # tags.  The rest of the buffer is the bookmark annotation.  
-# Lines beginning with a `#' character will be removed.  
-# Use C-c C-c to save changes or C-c C-k to cancel.
+# Lines beginning with a `#' character will be removed.
+# \\<pinboard-edit-mode-map>\\[completion-at-point] completes tag names.
+# Use \\[pinboard-save-edited-bookmark] to save changes or \\[pinboard-quit-window] to cancel.
 ")
+
+(defvar pinboard-edit-message
+  "\\<pinboard-edit-mode-map>Use \\[pinboard-save-edited-bookmark] to save changes or \\[pinboard-quit-window] to cancel.")
 
 (defvar-local pinboard-edited-bookmark nil)
 
-(define-derived-mode pinboard-edit-mode text-mode "Pinboard bookmark")
+(define-derived-mode pinboard-edit-mode text-mode
+  "Pinboard bookmark"
+  "Major mode for editing a Pinboard bookmark.
+
+The first line of the buffer is the bookmark title, the second
+line a list of tags.  The rest of the buffer is the bookmark
+annotation/description.  Lines beginning with a `#' character
+will be removed when the bookmark is saved.
+
+Use \\[completion-at-point] to complete tag names.
+
+Key bindings:
+\\[pinboard-save-edited-bookmark] -- Save changes
+\\[pinboard-quit-window] -- Quit without saving changes"
+  (pinboard--enable-tag-completion))
+(define-key pinboard-edit-mode-map (kbd "TAB") #'completion-at-point)
 (define-key pinboard-edit-mode-map (kbd "C-c C-c") #'pinboard-save-edited-bookmark)
 (define-key pinboard-edit-mode-map (kbd "C-c C-k") #'pinboard-quit-window)
 
-(define-derived-mode pinboard-view-mode special-mode "Pinboard bookmark")
+(define-derived-mode pinboard-view-mode special-mode
+  "Pinboard bookmark"
+  "Major mode for viewing a Pinboard bookmark.
+
+\\[pinboard-switch-to-edit-mode] -- Make the bookmark editable.
+\\[pinboard-quit-window] -- Dismiss this window")
 (define-key pinboard-view-mode-map (kbd "C-c C-k") #'pinboard-quit-window)
 (define-key pinboard-view-mode-map (kbd "C-x C-q") #'pinboard-switch-to-edit-mode)
 
@@ -1624,7 +1651,7 @@ bookmark in the format `TITLE <URL>'.)"
       (let ((inhibit-read-only t))
         (erase-buffer)
         (when edit-mode
-            (insert pinboard-edit-template))
+          (insert (substitute-command-keys pinboard-edit-template)))
         (save-excursion
           (insert (pinboard-bmk-title bmk)
                   "\n"
@@ -1640,7 +1667,8 @@ bookmark in the format `TITLE <URL>'.)"
 
 (defun pinboard-switch-to-edit-mode ()
   (interactive)
-  (message "Use C-c C-c to save changes, C-c C-k to exit.")
+  (message
+   (substitute-command-keys pinboard-edit-message))
   (setq buffer-read-only nil)
   (let ((bmk pinboard-edited-bookmark))
     (pinboard-edit-mode)
