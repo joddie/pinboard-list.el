@@ -64,8 +64,8 @@
 (require 'pinboard-api)
 (require 'subr-x nil t)
 (require 'queue)
-(require 'parse-time)
 (require 'json)
+(require 'tabulated-list)
 
 (defvar pinboard-api-endpoint "https://api.pinboard.in/v1/"
   "Base URL for the Pinboard API, ending in a slash.")
@@ -162,8 +162,8 @@ Removes all Pinboard bookmarks and tags from memory and removes
                 (string-trim-right (string)
                   (if (string-match "[ \t\n\r]+\\'" string)
                       (replace-match "" t t string)
-                    string))))
-      (string-trim-left (string-trim-right string))))
+                    string)))
+	(string-trim-left (string-trim-right string)))))
 
   (if (fboundp 'define-error)
       (defalias 'pinboard-define-error 'define-error)
@@ -396,7 +396,7 @@ JSON response into Lisp objects."
                        (json-readtable-error
                         (funcall callback nil nil)))))))))
     (let* ((wait-time (pinboard--wait-time method))
-           (rate-limited (plusp wait-time)))
+           (rate-limited (cl-plusp wait-time)))
       (if synchronous
           (progn
             (when rate-limited (sit-for wait-time))
@@ -539,7 +539,7 @@ fetched."
        
        (success (&optional msg)
          (when msg (message "%s" msg))
-         (funcall callback (hash-table-values pinboard-bookmarks)))
+         (funcall callback (pinboard-hash-table-values pinboard-bookmarks)))
        
        (failure (&optional (msg "Bookmark loading failed."))
          (when msg (message "%s" msg))
@@ -587,7 +587,7 @@ fetched."
 (defun pinboard--fetch-bookmarks-from-server (synchronous on-success on-failure)
   (let ((posts-all-wait (pinboard--wait-time "posts/all"))
         (posts-recent-wait (pinboard--wait-time "posts/recent")))
-    (cond ((and (plusp posts-all-wait) (plusp posts-recent-wait))
+    (cond ((and (cl-plusp posts-all-wait) (cl-plusp posts-recent-wait))
            (funcall on-failure))
           ((<= posts-all-wait posts-recent-wait)
            (pinboard--fetch-all-from-server synchronous on-success on-failure))
@@ -669,12 +669,12 @@ In this case the contents of `pinboard-bookmarks' and
                                           0 (length response) 0 10))
         (i 0))
     (dolist (elt response)
-      (progress-reporter-update progress (incf i))
+      (progress-reporter-update progress (cl-incf i))
       (let ((bmk (pinboard--parse-bookmark elt)))
         (puthash (pinboard-bmk-url bmk) bmk pinboard-bookmarks)
         (unless partial
           (dolist (tag (pinboard-bmk-tags bmk))
-            (incf (gethash tag pinboard-tags 0))))))
+            (cl-incf (gethash tag pinboard-tags 0))))))
     (progress-reporter-done progress)))
 
 (defun pinboard--parse-bookmark (json)
@@ -1111,10 +1111,10 @@ documentation for a list of commands."
                      sum (+ 1 (nth 1 column))))
            (unused-width
             (- window-width total-width)))
-      (when (plusp unused-width)
+      (when (cl-plusp unused-width)
         (cl-loop for column across format
                  if (equal (nth 0 column) "Title") ; HACK
-                 do (incf (nth 1 column) unused-width))))
+                 do (cl-incf (nth 1 column) unused-width))))
     format))
 
 (defun pinboard--display-bookmarks (bmks)
@@ -1178,7 +1178,7 @@ calls."
           (pinboard--enqueue-bookmark-update
            updated
            (lambda (success)
-             (if success (incf successes) (incf failures)))))))
+             (if success (cl-incf successes) (cl-incf failures)))))))
     (pinboard--enqueue-callback
      (lambda ()
        (funcall finally successes failures)))))
@@ -1219,9 +1219,12 @@ calls."
 
 (defun pinboard-bookmark-open-other-window (bookmark)
   (interactive (list (pinboard-bookmark-at-point)))
-  (save-window-excursion
-    (eww (pinboard-bmk-url bookmark)))
-  (switch-to-buffer-other-window "*eww*"))
+  (if (fboundp 'eww)
+      (progn
+	(save-window-excursion
+	  (eww (pinboard-bmk-url bookmark)))
+	(switch-to-buffer-other-window "*eww*"))
+    (error "Open in other window requires the `eww' package.")))
 
 (defun pinboard-where (bookmark)
   (interactive (list (pinboard-bookmark-at-point)))
@@ -1247,7 +1250,7 @@ calls."
                          pinboard-buffer-filters nil t)
       (user-error "No tag filters in current buffer"))))
   (setq pinboard-buffer-filters
-        (if (plusp (length tag))
+        (if (cl-plusp (length tag))
             (remove tag pinboard-buffer-filters)
           nil))
   (pinboard--display-bookmarks
@@ -1302,7 +1305,7 @@ calls."
           (prompt (format "Add tags to %d bookmark(s): " count)))
      (pinboard--read-tags prompt)))
   (if (not (and (length tags)
-                (length (first tags))))
+                (length (car tags))))
       (message "No tags")
     (pinboard--operate-on-bookmarks
      (lambda (bookmark)
@@ -1326,7 +1329,7 @@ calls."
                    (format "Remove tag(s) from %d bookmark(s) (RET means all): "
                            (length bmks))
                    tags)))
-        (if (plusp (length tags))
+        (if (cl-plusp (length tags))
             ;; Remove specified tags
             (pinboard--operate-on-bookmarks
              (lambda (bookmark)
@@ -1408,8 +1411,8 @@ calls."
                   (if unread "unread" "read"))
          (setf (pinboard-bmk-unread bookmark) unread)
          (if unread
-             (incf marked-unread)
-           (incf marked-read))))
+             (cl-incf marked-unread)
+           (cl-incf marked-read))))
      (lambda (_successes failures)
        (message "Marked %d bookmarks as read, %d as unread [%d errors]"
                 marked-read marked-unread failures)
@@ -1423,7 +1426,7 @@ calls."
           (if (> count 1)
               (format "Permanently delete %d bookmarks?" count)
             (format "Permanently delete bookmark `%s'?"
-                    (pinboard-bmk-title (first bookmarks))))))
+                    (pinboard-bmk-title (car bookmarks))))))
     (if (yes-or-no-p prompt)
         (let ((successes 0) (failures 0)
               (buffer (current-buffer)))
@@ -1436,12 +1439,12 @@ calls."
                (lambda (success)
                  (if success
                      (progn
-                       (incf successes)
+                       (cl-incf successes)
                        (remhash url pinboard-bookmarks)
                        (with-current-buffer buffer
                          (setq pinboard-displayed-urls
                                (remove url pinboard-displayed-urls))))
-                   (incf failures))))))
+                   (cl-incf failures))))))
           (pinboard--enqueue-callback
            (lambda ()
              (message "Deleted %d bookmark(s) [%d error(s)]"
@@ -1508,7 +1511,7 @@ calls."
     (pinboard--do-buffer-lines
      (when (funcall predicate (pinboard-bookmark-at-point))
        (tabulated-list-put-tag ">")
-       (incf count)))
+       (cl-incf count)))
     (message "Marked %d bookmark(s)" count)))
 
 ;;; Jump
@@ -1830,7 +1833,7 @@ with the tag at point."
          (prompt
           (if (> count 1)
               (format "Permanently delete %d tags?" count)
-            (format "Permanently delete tag `%s'?" (first tags)))))
+            (format "Permanently delete tag `%s'?" (car tags)))))
     (if (yes-or-no-p prompt)
         (let ((successes 0) (failures 0))
           (dolist (tag tags)
@@ -1840,9 +1843,9 @@ with the tag at point."
              (lambda (success)
                (if success
                    (progn
-                     (incf successes)
+                     (cl-incf successes)
                      (remhash tag pinboard-tags))
-                 (incf failures)))))
+                 (cl-incf failures)))))
           (pinboard--enqueue-callback
            (lambda ()
              (message "Deleted %d tag(s), %d error(s)"
