@@ -5,7 +5,7 @@
 ;; Author:			Jon Oddie <jonxfield at gmail.com>
 ;; Created:			22 August 2014
 ;; Updated:			18 September 2014
-;; Version:                     0.4
+;; Version:                     0.5
 ;; Url:                         https://github.com/joddie/pinboard-list.el
 ;; Package-Requires:            ((emacs "24") (cl-lib "0.3") (pinboard-api "0.1") (queue "0.1.1"))
 
@@ -524,6 +524,7 @@ fetched."
          (pinboard--load-from-cache
           (lambda () (success "Cached bookmarks may be out of date"))
           (lambda ()
+            (message "Loading bookmarks from cache failed; trying server")
             (pinboard--remove-cache)
             (pinboard--fetch-bookmarks-from-server synchronous #'success #'failure))))
        
@@ -606,6 +607,7 @@ fetched."
          (progress-reporter-done progress)
          (pinboard--cache-response response)
          (pinboard--parse-bookmarks response nil)
+         (message "Loaded all bookmarks from server.")
          (funcall on-success))))))
 
 (defun pinboard--fetch-recent-from-server (synchronous on-success on-failure)
@@ -619,6 +621,7 @@ fetched."
            (funcall on-failure)
          (progress-reporter-done progress)
          (pinboard--parse-bookmarks (plist-get response :posts) t)
+         (message "Loaded recent bookmarks from server.")
          (funcall on-success))))))
 
 ;;; Cache file handling
@@ -645,6 +648,7 @@ fetched."
       (with-temp-buffer
         (insert-file-contents pinboard-cache-file)
         (pinboard--parse-bookmarks (read (copy-marker (point-min))))
+        (message "Loaded bookmarks from cache file.")
         (funcall on-success))
     (error
      (funcall on-failure))))
@@ -656,6 +660,8 @@ fetched."
 PARTIAL specifies that RESPONSE contains only recent bookmarks.
 In this case the contents of `pinboard-bookmarks' and
 `pinboard-tags' should be updated rather than replaced"
+  (when (not (listp response))
+    (error "Bad response: %S" response))
   ;; Make new, empty hash tables for `pinboard-bookmarks' and
   ;; `pinboard-tags' either when (a) all bookmarks are being loaded,
   ;; so we can safely erase the old data, or (b) the variable is `nil'
@@ -908,17 +914,17 @@ OLD and NEW are both characters used to mark bookmarks."
 
 
 ;;;; Bookmark buffer mode
-(defvar-local pinboard-displayed-urls nil
-  "List of bookmark URLs displayed in this buffer")
+(defvar pinboard-displayed-urls nil
+  "List of bookmark URLs displayed in bookmark buffer.")
 
 (defun pinboard-displayed-bookmarks ()
   (mapcar #'pinboard-bookmark pinboard-displayed-urls))
 
-(defvar-local pinboard-buffer-filters nil
-  "List of tag filters applied to current buffer")
+(defvar pinboard-buffer-filters nil
+  "List of tag filters applied to bookmark buffer.")
 
-(defvar-local pinboard-buffer-tags nil
-  "Hash table listing tags of bookmarks in current buffer")
+(defvar pinboard-buffer-tags nil
+  "Hash table with the tags of currently displayed bookmarks.")
 
 (defvar pinboard-bookmark-columns
   '((unread "R" 1 t :pad-right 0)
