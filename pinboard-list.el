@@ -508,7 +508,7 @@ METHOD, ARGUMENTS and CALLBACK have the same meanings as in `pinboard-request'."
   "Login and retrieve Pinboard API token if `pinboard-api-token' is unset."
   (when (or (not pinboard-api-token)
             (string= pinboard-api-token "username:hexstring"))
-    (pinboard-login)))
+    (error "Set the `pinboard-api-token' variable before running this command.")))
 
 ;;; Fetch and cache bookmarks
 (pinboard-define-error 'pinboard-rate-limited "Fetching bookmarks is rate limited")
