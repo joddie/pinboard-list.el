@@ -1,4 +1,4 @@
-;;; pinboard-list.el --- Emacs client for Pinboard.in -*- lexical-binding: t -*-
+;;; pinboard-list.el --- Pinboard.in client -*- lexical-binding: t -*-
 
 ;; Copyright (C) 2014 Jon Oddie <jonxfield@gmail.com>
 
@@ -552,9 +552,10 @@ fetched."
            (pinboard--fetch-bookmarks-from-server
             synchronous
             #'success
-            (lambda () (success "Bookmarks may be out of date.")))
+            (lambda () (success "Loading from server failed; bookmarks may be out of date.")))
          ;; not force-update
-         (success)))
+         (success
+          (substitute-command-keys "Use \\[revert-buffer] to check for updates."))))
       
       ((pinboard--cache-exists-p)       ; not in-memory
        (pinboard--fetch-update-time
