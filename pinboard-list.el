@@ -986,6 +986,48 @@ OLD and NEW are both characters used to mark bookmarks."
     (define-key map (kbd "C-w") #'pinboard-copy-as-kill)
     map))
 
+(easy-menu-define
+    nil (list pinboard-bookmarks-mode-map) ""
+    `("Pinboard"
+      ["Refresh bookmark list" tabulated-list-revert]
+      "---"
+      ["Open bookmark at point" pinboard-bookmark-open]
+      ["Open in other window" pinboard-bookmark-open-other-window]
+      ["Show bookmark URL" pinboard-where]
+      ["Copy bookmark URL" pinboard-copy-as-kill]
+      ["Show bookmark details" pinboard-show-annotation]
+      ["Show all bookmark details" pinboard-show-all-annotations]
+      "---"
+      ["Jump to bookmark..." pinboard-jump-to-bookmark]
+      ["Rename bookmark" pinboard-rename-bookmark]
+      ["Edit bookmark details" pinboard-edit-annotation]
+      ["Relocate bookmark" pinboard-relocate-bookmark]
+      "---"
+      ["Add tag filter..." pinboard-add-tag-filter]
+      ["Remove tag filter..." pinboard-remove-tag-filter]
+      ["Show unread only" pinboard-filter-unread]
+      ["Show untagged only" pinboard-filter-untagged]
+      ["Omit marked bookmarks" pinboard-kill-bookmark-lines]
+      ["Show all bookmarks" pinboard-show-all]
+      "---"
+      ["Toggle displayed columns..." pinboard-toggle-column]
+      "---"
+      ["Mark bookmark at point" pinboard-mark t]
+      ["Mark for deletion" pinboard-mark-for-deletion]
+      ["Mark for deletion and move up" pinboard-mark-for-deletion-backward]
+      ["Unmark and move up" pinboard-unmark-backward]
+      ["Mark by tags..." pinboard-mark-by-tags]
+      ["Mark by title..." pinboard-mark-by-title]
+      ["Mark by url..." pinboard-mark-by-url]
+      ["Remove marks" pinboard-remove-marks]
+      ["Toggle marks" pinboard-toggle-marks]
+      ["Change marks" pinboard-change-marks]
+      "---"
+      ["Add tags..." pinboard-tag-bookmark]
+      ["Remove tags..." pinboard-untag-bookmark]
+      ["Toggle unread status" pinboard-toggle-unread]
+      ["Delete marked bookmarks" pinboard-do-flagged-delete-bookmarks]))
+
 (define-derived-mode pinboard-bookmarks-mode pinboard-tabulated-list-mode
   "Pinboard"
   "Major mode for viewing and editing a list of Pinboard bookmarks.
@@ -1745,6 +1787,24 @@ Key bindings:
     (define-key map (kbd "x") 'pinboard-do-flagged-delete-tags)
     (define-key map "j" #'pinboard-jump-to-tag)
     map))
+
+(easy-menu-define nil (list pinboard-tags-mode-map) ""
+  `("Pinboard"
+    ["Refresh tag list" tabulated-list-revert]
+    "---"
+    ["List bookmarks with tag" pinboard-tag-follow]
+    ["Rename tag(s)" pinboard-rename-tag]
+    ["Jump to tag..." pinboard-jump-to-tag]
+    "---"
+    ["Mark tag at point" pinboard-mark t]
+    ["Mark for deletion" pinboard-mark-for-deletion]
+    ["Mark for deletion and move up" pinboard-mark-for-deletion-backward]
+    ["Unmark and move up" pinboard-unmark-backward]
+    ["Remove marks" pinboard-remove-marks]
+    ["Toggle marks" pinboard-toggle-marks]
+    ["Change marks" pinboard-change-marks]
+    "---"
+    ["Delete marked tags" pinboard-do-flagged-delete-tags]))
 
 (define-derived-mode pinboard-tags-mode pinboard-tabulated-list-mode
   "Pinboard-tags"
