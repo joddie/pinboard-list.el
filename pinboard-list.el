@@ -66,6 +66,7 @@
 (require 'queue)
 (require 'json)
 (require 'tabulated-list)
+(require 'hl-line)
 
 (defvar pinboard-api-endpoint "https://api.pinboard.in/v1/"
   "Base URL for the Pinboard API, ending in a slash.")
@@ -862,7 +863,8 @@ In this case the contents of `pinboard-bookmarks' and
 (define-derived-mode pinboard-tabulated-list-mode tabulated-list-mode ""
                      "Generic enhanced tabulated-list-mode for Pinboard modes"
   (setq tabulated-list-padding 1)
-  (setq-local revert-buffer-function #'pinboard-tabulated-list-revert))
+  (setq-local revert-buffer-function #'pinboard-tabulated-list-revert)
+  (hl-line-mode +1))
 
 (defun pinboard-mark ()
   (interactive)
@@ -1680,7 +1682,8 @@ Use \\[completion-at-point] to complete tag names.
 Key bindings:
 \\[pinboard-save-edited-bookmark] -- Save changes
 \\[pinboard-quit-window] -- Quit without saving changes"
-  (pinboard--enable-tag-completion))
+  (pinboard--enable-tag-completion)
+  (visual-line-mode +1))
 (define-key pinboard-edit-mode-map (kbd "TAB") #'completion-at-point)
 (define-key pinboard-edit-mode-map (kbd "C-c C-c") #'pinboard-save-edited-bookmark)
 (define-key pinboard-edit-mode-map (kbd "C-c C-k") #'pinboard-quit-window)
@@ -1690,7 +1693,8 @@ Key bindings:
   "Major mode for viewing a Pinboard bookmark.
 
 \\[pinboard-switch-to-edit-mode] -- Make the bookmark editable.
-\\[pinboard-quit-window] -- Dismiss this window")
+\\[pinboard-quit-window] -- Dismiss this window"
+  (visual-line-mode +1))
 (define-key pinboard-view-mode-map (kbd "C-c C-k") #'pinboard-quit-window)
 (define-key pinboard-view-mode-map (kbd "C-x C-q") #'pinboard-switch-to-edit-mode)
 
